@@ -1,0 +1,19 @@
+# OS
+Thumbs.db
+.DS_Store
+
+# IDE
+.idea/
+.vs/
+*.csproj
+*.sln
+
+# Unity test project generated state
+TestProject~/Library/
+TestProject~/Logs/
+TestProject~/Temp/
+TestProject~/UserSettings/
+TestProject~/obj/
+TestProject~/Exports/
+TestProject~/Assets/MigrationTestFixture/
+TestProject~/Assets/MigrationTestFixture.meta

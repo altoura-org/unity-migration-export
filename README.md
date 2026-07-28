@@ -17,16 +17,35 @@ After the project opens, run
 
 ## Installing into a content project
 
-1. The consuming project must provide UnityGLTF (the package cannot declare a
-   git dependency itself). In the project's `Packages/manifest.json`:
+### Unity Package Manager UI (recommended)
+
+1. In Unity, open **Window → Package Manager**.
+2. Click **+** in the upper-left and select **Add package from git URL…**.
+3. Install UnityGLTF first:
+
+   ```text
+   https://github.com/KhronosGroup/UnityGLTF.git#release/2.14.1
+   ```
+
+4. Repeat **Add package from git URL…** and install the exporter:
+
+   ```text
+   https://github.com/altoura-org/unity-migration-export.git#v0.2.0
+   ```
+
+5. Wait for Unity to compile. **Altoura → Migration Export** should then
+   appear in the editor menu.
+
+Both repositories are public, so installation does not require GitHub
+authentication.
+
+### Packages/manifest.json alternative
+
+The Package Manager UI writes these entries into the consuming project's
+`Packages/manifest.json`; they can also be added manually:
 
 ```json
-"org.khronos.unitygltf": "https://github.com/KhronosGroup/UnityGLTF.git#release/2.14.1"
-```
-
-2. Add this package by git URL (or a local `file:` path while developing):
-
-```json
+"org.khronos.unitygltf": "https://github.com/KhronosGroup/UnityGLTF.git#release/2.14.1",
 "com.altoura.migration-export": "https://github.com/altoura-org/unity-migration-export.git#v0.2.0"
 ```
 

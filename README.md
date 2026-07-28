@@ -6,14 +6,10 @@ in the File ribbon tab).
 
 ## Developing and testing
 
-The repository includes a self-contained Unity project under `TestProject~`.
-Open that folder in Unity Hub with Unity 2022.3.67f2. It references the package
-source at the repository root, so code changes under `Editor/` are compiled
-directly without publishing or refreshing a Git package.
-
-After the project opens, run
-**Altoura → Migration Tests → Create Test Fixture**. See
-`TestProject~/README.md` for the export and verification flow.
+The private development repository includes a self-contained Unity project
+under `TestProject~`; it is intentionally excluded from public package
+releases. Maintainers open that folder in Unity Hub with Unity 2022.3.67f2
+and run **Altoura → Migration Tests → Create Test Fixture**.
 
 ## Installing into a content project
 

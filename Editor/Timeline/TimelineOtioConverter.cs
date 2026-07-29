@@ -45,7 +45,7 @@ namespace Altoura.Migration.Editor
 
                 if (trackCapture.trackType != null && trackCapture.trackType.IndexOf("AnimationTrack", StringComparison.Ordinal) >= 0)
                 {
-                    AddAnimationChannels(timeline, trackCapture, director, exportRoot, rootStableId);
+                    AddAnimationChannels(timeline, trackCapture, rootStableId);
                     continue;
                 }
 
@@ -90,8 +90,6 @@ namespace Altoura.Migration.Editor
         private static void AddAnimationChannels(
             OtioTimelineDocument timeline,
             UnityTimelineTrackCapture trackCapture,
-            PlayableDirector director,
-            GameObject exportRoot,
             string rootStableId)
         {
             if (trackCapture.binding == null || string.IsNullOrEmpty(trackCapture.binding.altouraStableId))
@@ -107,7 +105,7 @@ namespace Altoura.Migration.Editor
 
             foreach (var clip in trackCapture.clips)
             {
-                SampleTransformClip(timeline, trackCapture, boundObject, director, rootStableId, clip);
+                SampleTransformClip(timeline, trackCapture, boundObject, rootStableId, clip);
             }
         }
 
@@ -115,131 +113,185 @@ namespace Altoura.Migration.Editor
             OtioTimelineDocument timeline,
             UnityTimelineTrackCapture trackCapture,
             GameObject boundObject,
-            PlayableDirector director,
             string rootStableId,
             UnityTimelineClipCapture clip)
         {
+            if (clip.sourceAnimationClip == null)
+            {
+                Debug.LogWarning(
+                    "[AltouraMigration] Skipping animation clip '" + clip.displayName +
+                    "' because its source AnimationClip is unavailable.");
+                return;
+            }
+
             var positionKeys = new List<OtioKeyframeDocument>();
             var rotationKeys = new List<OtioKeyframeDocument>();
             var scaleKeys = new List<OtioKeyframeDocument>();
 
-            var originalTime = director.time;
-            var originalUpdateMode = director.timeUpdateMode;
-            director.timeUpdateMode = DirectorUpdateMode.Manual;
-
-            // In Edit Mode the director's graph is never built (it only builds on
-            // Play), and Evaluate() on an unbuilt graph is a no-op — every sample
-            // would read the same static pose. Build it explicitly for sampling.
-            var graphWasValid = director.playableGraph.IsValid();
-            if (!graphWasValid)
+            // Sample only source key times. The previous implementation baked at
+            // 60 FPS, turning a two-key clip into hundreds of redundant OTIO keys.
+            // AnimationClip.SampleAnimation works in Edit Mode without depending
+            // on a PlayableDirector graph.
+            var sampleTimes = BuildSampleTimes(clip);
+            var snapshots = CaptureTransformSnapshots(boundObject);
+            try
             {
-                director.RebuildGraph();
+                foreach (var timelineTime in sampleTimes)
+                {
+                    var sourceTime = timelineTime - clip.start + clip.clipIn;
+                    sourceTime = Math.Max(0, Math.Min(clip.sourceAnimationClip.length, sourceTime));
+                    clip.sourceAnimationClip.SampleAnimation(boundObject, (float)sourceTime);
+
+                    var transform = boundObject.transform;
+                    var localPosition = transform.localPosition;
+                    var localRotation = transform.localRotation;
+
+                    // SampleAnimation writes the clip's raw pose; Timeline additionally
+                    // applies the track/clip offset recorded at capture time. Without
+                    // this the object snaps away from its GLB pose as soon as the first
+                    // keyframe is applied, and rotated offsets skew its motion axes.
+                    if (clip.animatesRootTransform)
+                    {
+                        localPosition = clip.offsetPosition + clip.offsetRotation * localPosition;
+                        localRotation = clip.offsetRotation * localRotation;
+                    }
+
+                    positionKeys.Add(CreateLinearKeyframe(
+                        timelineTime,
+                        CoordinateConverter.ToGltfPositionArray(localPosition),
+                        false));
+                    rotationKeys.Add(CreateLinearKeyframe(
+                        timelineTime,
+                        CoordinateConverter.ToGltfRotationArray(localRotation),
+                        false));
+                    scaleKeys.Add(CreateLinearKeyframe(
+                        timelineTime,
+                        CoordinateConverter.ToGltfScaleArray(transform.localScale),
+                        false));
+                }
+            }
+            finally
+            {
+                RestoreTransformSnapshots(snapshots);
             }
 
-            var sampleCount = Math.Max(2, (int)Math.Ceiling(clip.duration * SampleFps) + 1);
-
-            // The vNext timeline hides fully-baked tracks, so mark the sample
-            // nearest each source keyframe as a non-baked "anchor" (editable dot).
-            // Falls back to first+last when the clip carried no anchor times.
-            var anchorIndices = BuildAnchorIndices(clip, sampleCount);
-
-            for (var i = 0; i < sampleCount; i++)
+            var emittedChannels = 0;
+            if (!IsConstant(positionKeys))
             {
-                var localTime = Math.Min(clip.duration, i / SampleFps);
-                var timelineTime = clip.start + localTime;
-                director.time = timelineTime;
-                director.Evaluate();
-
-                var isBaked = !anchorIndices.Contains(i);
-                var transform = boundObject.transform;
-                positionKeys.Add(CreateLinearKeyframe(timelineTime, CoordinateConverter.ToGltfPositionArray(transform.localPosition), isBaked));
-                rotationKeys.Add(CreateLinearKeyframe(timelineTime, CoordinateConverter.ToGltfRotationArray(transform.localRotation), isBaked));
-                scaleKeys.Add(CreateLinearKeyframe(timelineTime, CoordinateConverter.ToGltfScaleArray(transform.localScale), isBaked));
+                timeline.tracks.children.Add(CreateSequence(
+                    trackCapture.trackName + "-position",
+                    trackCapture.binding.altouraStableId,
+                    rootStableId,
+                    trackCapture.binding.hierarchyPath,
+                    "position",
+                    "default",
+                    positionKeys));
+                emittedChannels++;
             }
 
-            director.time = originalTime;
-            director.timeUpdateMode = originalUpdateMode;
-            director.Evaluate();
-
-            // Restore edit-mode state: destroy the graph we built for sampling.
-            if (!graphWasValid && director.playableGraph.IsValid())
+            if (!IsConstant(rotationKeys))
             {
-                director.playableGraph.Destroy();
+                timeline.tracks.children.Add(CreateSequence(
+                    trackCapture.trackName + "-rotation",
+                    trackCapture.binding.altouraStableId,
+                    rootStableId,
+                    trackCapture.binding.hierarchyPath,
+                    "rotation",
+                    "default",
+                    rotationKeys));
+                emittedChannels++;
             }
 
-            if (IsConstant(positionKeys) && IsConstant(rotationKeys) && IsConstant(scaleKeys))
+            if (!IsConstant(scaleKeys))
+            {
+                timeline.tracks.children.Add(CreateSequence(
+                    trackCapture.trackName + "-scale",
+                    trackCapture.binding.altouraStableId,
+                    rootStableId,
+                    trackCapture.binding.hierarchyPath,
+                    "scale",
+                    "default",
+                    scaleKeys));
+                emittedChannels++;
+            }
+
+            if (emittedChannels == 0)
             {
                 Debug.LogWarning(
-                    "[AltouraMigration] Sampled transform never changed for track '" + trackCapture.trackName +
-                    "' bound to '" + trackCapture.binding.hierarchyPath +
-                    "'. The director may not be animating in Edit Mode (inactive object or disabled Animator?).");
+                    "[AltouraMigration] Animation clip '" + clip.displayName +
+                    "' produced no transform changes for '" + trackCapture.binding.hierarchyPath + "'.");
             }
-
-            timeline.tracks.children.Add(CreateSequence(
-                trackCapture.trackName + "-position",
-                trackCapture.binding.altouraStableId,
-                rootStableId,
-                trackCapture.binding.hierarchyPath,
-                "position",
-                "default",
-                positionKeys));
-
-            timeline.tracks.children.Add(CreateSequence(
-                trackCapture.trackName + "-rotation",
-                trackCapture.binding.altouraStableId,
-                rootStableId,
-                trackCapture.binding.hierarchyPath,
-                "rotation",
-                "default",
-                rotationKeys));
-
-            timeline.tracks.children.Add(CreateSequence(
-                trackCapture.trackName + "-scale",
-                trackCapture.binding.altouraStableId,
-                rootStableId,
-                trackCapture.binding.hierarchyPath,
-                "scale",
-                "default",
-                scaleKeys));
         }
 
-        // Maps each source keyframe time to the index of the closest baked sample.
-        // These indices become non-baked anchors. When the clip has no recorded
-        // anchor times, anchors the first and last sample so the track is visible.
-        private static HashSet<int> BuildAnchorIndices(UnityTimelineClipCapture clip, int sampleCount)
+        private static List<double> BuildSampleTimes(UnityTimelineClipCapture clip)
         {
-            var indices = new HashSet<int>();
+            var times = new SortedSet<double>();
+            var start = clip.start;
+            var end = clip.start + clip.duration;
+            times.Add(start);
+            times.Add(end);
+
             if (clip.anchorTimes != null)
             {
                 foreach (var anchorTime in clip.anchorTimes)
                 {
-                    var localTime = anchorTime - clip.start;
-                    if (localTime < 0 || localTime > clip.duration)
+                    if (anchorTime < start - 0.000001 || anchorTime > end + 0.000001)
                     {
                         continue;
                     }
 
-                    var index = (int)Math.Round(localTime * SampleFps);
-                    if (index < 0)
-                    {
-                        index = 0;
-                    }
-                    else if (index >= sampleCount)
-                    {
-                        index = sampleCount - 1;
-                    }
-
-                    indices.Add(index);
+                    times.Add(Math.Max(start, Math.Min(end, anchorTime)));
                 }
             }
 
-            if (indices.Count == 0)
+            return new List<double>(times);
+        }
+
+        private static List<TransformSnapshot> CaptureTransformSnapshots(GameObject root)
+        {
+            var snapshots = new List<TransformSnapshot>();
+            foreach (var transform in root.GetComponentsInChildren<Transform>(true))
             {
-                indices.Add(0);
-                indices.Add(sampleCount - 1);
+                snapshots.Add(new TransformSnapshot(transform));
             }
 
-            return indices;
+            return snapshots;
+        }
+
+        private static void RestoreTransformSnapshots(List<TransformSnapshot> snapshots)
+        {
+            foreach (var snapshot in snapshots)
+            {
+                snapshot.Restore();
+            }
+        }
+
+        private sealed class TransformSnapshot
+        {
+            private readonly Transform transform;
+            private readonly Vector3 localPosition;
+            private readonly Quaternion localRotation;
+            private readonly Vector3 localScale;
+
+            public TransformSnapshot(Transform transform)
+            {
+                this.transform = transform;
+                localPosition = transform.localPosition;
+                localRotation = transform.localRotation;
+                localScale = transform.localScale;
+            }
+
+            public void Restore()
+            {
+                if (transform == null)
+                {
+                    return;
+                }
+
+                transform.localPosition = localPosition;
+                transform.localRotation = localRotation;
+                transform.localScale = localScale;
+            }
         }
 
         private static void AddAudioChannels(OtioTimelineDocument timeline, UnityTimelineTrackCapture trackCapture, string rootStableId)

@@ -1,6 +1,6 @@
 {
   "name": "com.altoura.migration-export",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "displayName": "Altoura Migration Export",
   "description": "Unity Editor tool that exports prefabs/scenes into .altpkg.zip exchange packages (GLB with stable IDs, OTIO timelines, particles, audio) for import into Altoura vNext Scene Manager.",
   "unity": "2022.3",

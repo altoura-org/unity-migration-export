@@ -179,13 +179,35 @@ Matches vNext `OtioSerializableCollection`:
 
 ## Coordinate conversion
 
-Unity (left-handed Y-up) → glTF/Three.js (right-handed Y-up):
+Unity (left-handed Y-up) → glTF/Three.js (right-handed Y-up). UnityGLTF flips the
+X axis (`CoordinateSpaceConversionScale = (-1, 1, 1)`), so `CoordinateConverter`
+must use the same rule or timeline keyframes replay in a different frame than the
+baked GLB nodes:
 
-- Position: `(x, y, z)` → `(x, y, -z)`
-- Rotation: `Quaternion` multiplied by axis-flip conversion quaternion
+- Position: `(x, y, z)` → `(-x, y, z)`
+- Rotation: `(x, y, z, w)` → `(x, -y, -z, w)`
 - Scale: `(x, y, z)` unchanged
 
-Applied in `CoordinateConverter` for OTIO keyframe values. Geometry conversion is handled by UnityGLTF.
+Applied in `CoordinateConverter` for OTIO keyframe values, on each node's local
+transform. Geometry conversion is handled by UnityGLTF.
+
+## Timeline transform offsets
+
+An `AnimationTrack` stores a rigid offset (the track's own position/rotation plus
+the clip's offset, or `infiniteClipOffset*` for recorded clips) that Timeline
+applies on top of the clip's animated pose. `AnimationClip.SampleAnimation`
+returns the raw pose without it, so the capture records the composed offset per
+clip and the OTIO converter re-applies it before coordinate conversion:
+
+```
+localPosition = offsetPosition + offsetRotation * sampledPosition
+localRotation = offsetRotation * sampledRotation
+```
+
+Offsets only apply when the clip animates the bound object's own transform, so
+`animatesRootTransform` gates the composition. Scene-offset track modes derive
+their starting pose from the live scene at preview time; those export the clip
+offset only and log a warning.
 
 ## Unity Editor usage
 

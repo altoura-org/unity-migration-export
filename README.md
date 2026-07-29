@@ -26,7 +26,7 @@ and run **Altoura → Migration Tests → Create Test Fixture**.
 4. Repeat **Add package from git URL…** and install the exporter:
 
    ```text
-   https://github.com/altoura-org/unity-migration-export.git#v0.2.0
+   https://github.com/altoura-org/unity-migration-export.git#v0.3.0
    ```
 
 5. Wait for Unity to compile. **Altoura → Migration Export** should then
@@ -42,7 +42,7 @@ The Package Manager UI writes these entries into the consuming project's
 
 ```json
 "org.khronos.unitygltf": "https://github.com/KhronosGroup/UnityGLTF.git#release/2.14.1",
-"com.altoura.migration-export": "https://github.com/altoura-org/unity-migration-export.git#v0.2.0"
+"com.altoura.migration-export": "https://github.com/altoura-org/unity-migration-export.git#v0.3.0"
 ```
 
 `com.unity.timeline` is declared as a normal dependency and resolves
@@ -58,7 +58,7 @@ by `.azuredevops/release.yml`.
 2. Add a secret pipeline variable named `GITHUB_TOKEN`. Use a fine-grained
    GitHub token with Contents read/write permission for only the public repo.
 3. Update the version in `package.json`, commit, and verify `TestProject~`.
-4. Create and push a matching tag, for example `v0.2.0`.
+4. Create and push a matching tag, for example `v0.3.0`.
 
 The pipeline excludes `TestProject~` and its own pipeline file from the public
 release. The public repository contains only the installable package, contract,
@@ -76,7 +76,9 @@ Output ZIP contains:
 - `models/*.glb` — node `extras` carry `altouraStableId`, plus
   `altouraInitiallyActive: false` (inactive GameObjects) and
   `altouraRendererEnabled: false` (disabled Mesh/SkinnedMeshRenderers)
-- `timelines/*.otio.json` — vNext-compatible OTIO (sampled at 60 fps)
+- `timelines/*.otio.json` — vNext-compatible OTIO, sampled at the source
+  clip's own key times; position, rotation, and scale channels are omitted
+  when they never change
 - `timelines/*.unity.json` — lossless Unity Timeline capture (sidecar)
 - `particles/*.json`
 - `audio/*` (when referenced by timelines)

@@ -48,11 +48,24 @@ namespace Altoura.Migration.Editor
         public bool isInfiniteClip;
 
         // Timeline-space times (seconds) of the source AnimationClip's real
-        // keyframes. The OTIO sampler marks the nearest baked sample at each of
-        // these as a non-baked "anchor" so the vNext timeline shows editable
-        // keyframe dots (it hides fully-baked tracks). Empty => sampler falls
-        // back to anchoring the first and last sample only.
+        // keyframes. OTIO samples only these anchors (plus clip boundaries)
+        // instead of baking every frame. Empty => clip boundaries only.
         public List<double> anchorTimes = new List<double>();
+
+        // Timeline applies a rigid offset on top of the clip's animated root
+        // pose (AnimationTrack.position/rotation composed with the clip's own
+        // or the track's infinite-clip offset). Sampling the AnimationClip
+        // directly bypasses that offset, so it is recorded here and re-composed
+        // when OTIO keyframes are written. Only meaningful when the clip
+        // animates the bound object's own transform.
+        public bool animatesRootTransform;
+        public UnityEngine.Vector3 offsetPosition;
+        public UnityEngine.Quaternion offsetRotation = UnityEngine.Quaternion.identity;
+
+        // Editor-only source used during the same export pass. It is excluded
+        // from the lossless .unity.json sidecar and never leaves Unity.
+        [NonSerialized]
+        public UnityEngine.AnimationClip sourceAnimationClip;
     }
 
     [Serializable]

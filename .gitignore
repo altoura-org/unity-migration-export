@@ -17,3 +17,7 @@ TestProject~/obj/
 TestProject~/Exports/
 TestProject~/Assets/MigrationTestFixture/
 TestProject~/Assets/MigrationTestFixture.meta
+
+# Re-created by importing TextMesh Pro essentials
+TestProject~/Assets/TextMesh Pro/
+TestProject~/Assets/TextMesh Pro.meta

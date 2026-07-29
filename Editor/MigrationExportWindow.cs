@@ -7,7 +7,7 @@ namespace Altoura.Migration.Editor
     public class MigrationExportWindow : EditorWindow
     {
         private GameObject prefab;
-        private string timelineNameFilter = "door_open_timeline";
+        private string timelineNameFilter = string.Empty;
         private bool exportAllTimelines = true;
         private bool compressMeshesWithDraco = true;
         private string outputDirectory;
@@ -86,20 +86,6 @@ namespace Altoura.Migration.Editor
             outputDirectory = EditorGUILayout.TextField("Output Directory", string.IsNullOrEmpty(outputDirectory) ? GetDefaultOutputDirectory() : outputDirectory);
 
             EditorGUILayout.Space();
-
-            if (GUILayout.Button("Export Combo Room Realscale (Scale-Up)", GUILayout.Height(28)))
-            {
-                prefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Combo Room/Realscale.prefab");
-                exportAllTimelines = true;
-                ExportPackage();
-            }
-
-            if (GUILayout.Button("Export Vertical Slice (door_open_timeline)", GUILayout.Height(28)))
-            {
-                exportAllTimelines = false;
-                timelineNameFilter = "door_open_timeline";
-                ExportPackage();
-            }
 
             if (GUILayout.Button("Export Package", GUILayout.Height(32)))
             {

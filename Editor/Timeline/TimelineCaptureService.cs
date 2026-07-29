@@ -69,6 +69,13 @@ namespace Altoura.Migration.Editor
                         clipCapture.hasEmbeddedAnimationClip = true;
                         clipCapture.animationClipName = animationPlayableAsset.clip.name;
                         clipCapture.anchorTimes = ExtractAnchorTimes(animationPlayableAsset.clip, clip.start, clip.clipIn);
+                        clipCapture.sourceAnimationClip = animationPlayableAsset.clip;
+                        CaptureOffsets(
+                            clipCapture,
+                            track as AnimationTrack,
+                            animationPlayableAsset.clip,
+                            animationPlayableAsset.position,
+                            animationPlayableAsset.rotation);
                     }
 
                     trackCapture.clips.Add(clipCapture);
@@ -80,7 +87,7 @@ namespace Altoura.Migration.Editor
                     track is AnimationTrack animationTrack &&
                     animationTrack.infiniteClip != null)
                 {
-                    trackCapture.clips.Add(new UnityTimelineClipCapture
+                    var infiniteCapture = new UnityTimelineClipCapture
                     {
                         displayName = animationTrack.infiniteClip.name,
                         clipAssetType = "InfiniteClip",
@@ -90,8 +97,18 @@ namespace Altoura.Migration.Editor
                         hasEmbeddedAnimationClip = true,
                         animationClipName = animationTrack.infiniteClip.name,
                         isInfiniteClip = true,
-                        anchorTimes = ExtractAnchorTimes(animationTrack.infiniteClip, 0, 0)
-                    });
+                        anchorTimes = ExtractAnchorTimes(animationTrack.infiniteClip, 0, 0),
+                        sourceAnimationClip = animationTrack.infiniteClip
+                    };
+
+                    CaptureOffsets(
+                        infiniteCapture,
+                        animationTrack,
+                        animationTrack.infiniteClip,
+                        animationTrack.infiniteClipOffsetPosition,
+                        animationTrack.infiniteClipOffsetRotation);
+
+                    trackCapture.clips.Add(infiniteCapture);
                 }
 
                 document.tracks.Add(trackCapture);
@@ -166,6 +183,69 @@ namespace Altoura.Migration.Editor
             }
 
             return new List<double>(times);
+        }
+
+        // Mirrors Timeline's own offset composition (TimelineRecording.GetLocalToTrack):
+        // the track offset is applied first, then the clip's offset, and the result
+        // is a rigid transform in the bound object's parent space. Offsets only take
+        // effect when the clip drives the bound object's own transform, which is why
+        // that is recorded alongside them.
+        private static void CaptureOffsets(
+            UnityTimelineClipCapture capture,
+            AnimationTrack track,
+            AnimationClip clip,
+            Vector3 clipOffsetPosition,
+            Quaternion clipOffsetRotation)
+        {
+            if (track == null)
+            {
+                return;
+            }
+
+            capture.animatesRootTransform = AnimatesRootTransform(clip);
+            if (!capture.animatesRootTransform)
+            {
+                return;
+            }
+
+            var trackPosition = Vector3.zero;
+            var trackRotation = Quaternion.identity;
+
+            if (track.trackOffset == TrackOffset.ApplyTransformOffsets)
+            {
+                trackPosition = track.position;
+                trackRotation = track.rotation;
+            }
+            else
+            {
+                // Scene-offset modes derive the starting pose from the live scene at
+                // preview time, which is not reachable from the asset. The clip offset
+                // is still exported; only the track portion is dropped.
+                Debug.LogWarning(
+                    "[AltouraMigration] Track '" + track.name + "' uses " + track.trackOffset +
+                    "; only its clip offset is exported.");
+            }
+
+            capture.offsetPosition = trackPosition + trackRotation * clipOffsetPosition;
+            capture.offsetRotation = trackRotation * clipOffsetRotation;
+        }
+
+        private static bool AnimatesRootTransform(AnimationClip clip)
+        {
+            if (clip == null)
+            {
+                return false;
+            }
+
+            foreach (var binding in AnimationUtility.GetCurveBindings(clip))
+            {
+                if (string.IsNullOrEmpty(binding.path) && binding.type == typeof(Transform))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static UnityTimelineBindingCapture CreateBindingCapture(UnityEngine.Object binding, GameObject exportRoot)
